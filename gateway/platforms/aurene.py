@@ -161,6 +161,7 @@ class AureneAdapter(BasePlatformAdapter):
                     self._webhook_url,
                     json={
                         "chat_id": chat_id,
+                        "type": "message",
                         "content": content,
                         "reply_to": reply_to,
                         "metadata": metadata or {},
@@ -168,6 +169,7 @@ class AureneAdapter(BasePlatformAdapter):
                     headers={
                         "Authorization": f"Bearer {self._api_key}",
                         "Content-Type": "application/json",
+                        "Accept": "application/json",
                     },
                 )
                 resp.raise_for_status()
@@ -189,6 +191,7 @@ class AureneAdapter(BasePlatformAdapter):
                     },
                     headers={
                         "Authorization": f"Bearer {self._api_key}",
+                        "Accept": "application/json",
                     },
                 )
         except Exception:
