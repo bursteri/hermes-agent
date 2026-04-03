@@ -65,7 +65,7 @@ SEND_MESSAGE_SCHEMA = {
             },
             "target": {
                 "type": "string",
-                "description": "Delivery target. Format: 'platform' (uses home channel), 'platform:#channel-name', 'platform:chat_id', or Telegram topic 'telegram:chat_id:thread_id'. Examples: 'telegram', 'telegram:-1001234567890:17585', 'discord:#bot-home', 'slack:#engineering', 'signal:+15551234567'"
+                "description": "Delivery target. Format: 'platform' (uses home channel), 'platform:#channel-name', 'platform:chat_id', or Telegram topic 'telegram:chat_id:thread_id'. Examples: 'telegram', 'telegram:-1001234567890:17585', 'discord:#bot-home', 'slack:#engineering', 'signal:+15551234567', 'aurene:user-1'"
             },
             "message": {
                 "type": "string",
@@ -156,6 +156,7 @@ def _handle_send(args):
         "wecom": Platform.WECOM,
         "email": Platform.EMAIL,
         "sms": Platform.SMS,
+        "aurene": Platform.AURENE,
     }
     platform = platform_map.get(platform_name)
     if not platform:
@@ -396,6 +397,8 @@ async def _send_to_platform(platform, pconfig, chat_id, message, thread_id=None,
             result = await _send_feishu(pconfig, chat_id, chunk, thread_id=thread_id)
         elif platform == Platform.WECOM:
             result = await _send_wecom(pconfig.extra, chat_id, chunk)
+        elif platform == Platform.AURENE:
+            result = await _send_aurene(pconfig, chat_id, chunk)
         else:
             result = {"error": f"Direct sending not yet implemented for {platform.value}"}
 
@@ -868,6 +871,26 @@ async def _send_wecom(extra, chat_id, message):
             await adapter.disconnect()
     except Exception as e:
         return _error(f"WeCom send failed: {e}")
+
+
+async def _send_aurene(pconfig, chat_id, message):
+    """Send via Aurene webhook."""
+    import httpx
+    webhook_url = os.getenv("AURENE_WEBHOOK_URL", "")
+    api_key = os.getenv("AURENE_API_KEY", "")
+    if not webhook_url or not api_key:
+        return {"error": "Aurene not configured (AURENE_WEBHOOK_URL / AURENE_API_KEY)"}
+    try:
+        async with httpx.AsyncClient(timeout=30.0) as client:
+            resp = await client.post(
+                webhook_url,
+                json={"chat_id": chat_id, "content": message},
+                headers={"Authorization": f"Bearer {api_key}"},
+            )
+            resp.raise_for_status()
+        return {"success": True, "platform": "aurene", "chat_id": chat_id}
+    except Exception as e:
+        return {"error": f"Aurene send failed: {e}"}
 
 
 async def _send_feishu(pconfig, chat_id, message, media_files=None, thread_id=None):
