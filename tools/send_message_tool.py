@@ -207,6 +207,7 @@ def _handle_send(args):
         "weixin": Platform.WEIXIN,
         "email": Platform.EMAIL,
         "sms": Platform.SMS,
+        "aurene": Platform.AURENE,
     }
     platform = platform_map.get(platform_name)
     if not platform:
@@ -516,6 +517,8 @@ async def _send_to_platform(platform, pconfig, chat_id, message, thread_id=None,
             result = await _send_bluebubbles(pconfig.extra, chat_id, chunk)
         elif platform == Platform.QQBOT:
             result = await _send_qqbot(pconfig, chat_id, chunk)
+        elif platform == Platform.AURENE:
+            result = await _send_aurene(pconfig, chat_id, chunk)
         else:
             result = {"error": f"Direct sending not yet implemented for {platform.value}"}
 
@@ -1167,6 +1170,26 @@ async def _send_bluebubbles(extra, chat_id, message):
             await adapter.disconnect()
     except Exception as e:
         return _error(f"BlueBubbles send failed: {e}")
+
+
+async def _send_aurene(pconfig, chat_id, message):
+    """Send via Aurene webhook."""
+    import httpx
+    webhook_url = os.getenv("AURENE_WEBHOOK_URL", "")
+    api_key = os.getenv("AURENE_API_KEY", "")
+    if not webhook_url or not api_key:
+        return {"error": "Aurene not configured (AURENE_WEBHOOK_URL / AURENE_API_KEY)"}
+    try:
+        async with httpx.AsyncClient(timeout=30.0) as client:
+            resp = await client.post(
+                webhook_url,
+                json={"chat_id": chat_id, "content": message},
+                headers={"Authorization": f"Bearer {api_key}"},
+            )
+            resp.raise_for_status()
+        return {"success": True, "platform": "aurene", "chat_id": chat_id}
+    except Exception as e:
+        return {"error": f"Aurene send failed: {e}"}
 
 
 async def _send_feishu(pconfig, chat_id, message, media_files=None, thread_id=None):

@@ -335,6 +335,15 @@ PLATFORM_HINTS = {
         "is preserved for threading. Do not include greetings or sign-offs unless "
         "contextually appropriate."
     ),
+    "aurene": (
+        "You are on a text messaging communication platform, Aurene. "
+        "Please do not use markdown as it does not render. "
+        "You can send media files natively: to deliver a file to the user, "
+        "include MEDIA:/absolute/path/to/file in your response. Images "
+        "(.png, .jpg, .webp) appear as photos, audio (.ogg) sends as voice "
+        "bubbles, and videos (.mp4) play inline. You can also include image "
+        "URLs in markdown format ![alt](url) and they will be sent as native photos."
+    ),
     "cron": (
         "You are running as a scheduled cron job. There is no user present — you "
         "cannot ask questions, request clarification, or wait for follow-up. Execute "

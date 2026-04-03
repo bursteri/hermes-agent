@@ -67,6 +67,7 @@ class Platform(Enum):
     WEIXIN = "weixin"
     BLUEBUBBLES = "bluebubbles"
     QQBOT = "qqbot"
+    AURENE = "aurene"
 
 
 @dataclass
@@ -1161,6 +1162,14 @@ def _apply_env_overrides(config: GatewayConfig) -> None:
                 chat_id=qq_home,
                 name=os.getenv("QQ_HOME_CHANNEL_NAME", "Home"),
             )
+
+    # Aurene
+    aurene_enabled = os.getenv("AURENE_ENABLED", "").lower() in ("true", "1", "yes")
+    if aurene_enabled:
+        if Platform.AURENE not in config.platforms:
+            config.platforms[Platform.AURENE] = PlatformConfig()
+        config.platforms[Platform.AURENE].enabled = True
+        config.platforms[Platform.AURENE].token = os.getenv("AURENE_API_KEY", "")
 
     # Session settings
     idle_minutes = os.getenv("SESSION_IDLE_MINUTES")
