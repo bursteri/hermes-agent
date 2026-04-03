@@ -108,6 +108,8 @@ class Platform(Enum):
     BLUEBUBBLES = "bluebubbles"
     QQBOT = "qqbot"
     YUANBAO = "yuanbao"
+    AURENE = "aurene"
+
     @classmethod
     def _missing_(cls, value):
         """Accept unknown platform names only for known plugin adapters.
@@ -1645,6 +1647,14 @@ def _apply_env_overrides(config: GatewayConfig) -> None:
         yuanbao_group_allow_from = os.getenv("YUANBAO_GROUP_ALLOW_FROM")
         if yuanbao_group_allow_from:
             extra["group_allow_from"] = yuanbao_group_allow_from
+
+    # Aurene
+    aurene_enabled = os.getenv("AURENE_ENABLED", "").lower() in ("true", "1", "yes")
+    if aurene_enabled:
+        if Platform.AURENE not in config.platforms:
+            config.platforms[Platform.AURENE] = PlatformConfig()
+        config.platforms[Platform.AURENE].enabled = True
+        config.platforms[Platform.AURENE].token = os.getenv("AURENE_API_KEY", "")
 
     # Session settings
     idle_minutes = os.getenv("SESSION_IDLE_MINUTES")
