@@ -254,6 +254,7 @@ def _deliver_result(job: dict, content: str, adapters=None, loop=None) -> Option
         "email": Platform.EMAIL,
         "sms": Platform.SMS,
         "bluebubbles": Platform.BLUEBUBBLES,
+        "aurene": Platform.AURENE,
     }
     platform = platform_map.get(platform_name.lower())
     if not platform:
