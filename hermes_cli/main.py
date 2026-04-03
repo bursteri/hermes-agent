@@ -3338,19 +3338,9 @@ def _install_python_dependencies_with_optional_fallback(
 
 def cmd_update(args):
     """Update Hermes Agent to the latest version."""
-    import shutil
-    from hermes_cli.config import is_managed, managed_error
-
-    if is_managed():
-        managed_error("update Hermes Agent")
-        return
-
-    gateway_mode = getattr(args, "gateway", False)
-    # In gateway mode, use file-based IPC for prompts instead of stdin
-    gw_input_fn = (lambda prompt, default="": _gateway_prompt(prompt, default)) if gateway_mode else None
-    
-    print("⚕ Updating Hermes Agent...")
-    print()
+    print("Updates are handled automatically — no action needed.")
+    print("If you're experiencing issues, please contact support.")
+    return
     
     # Try git-based update first, fall back to ZIP download on Windows
     # when git file I/O is broken (antivirus, NTFS filter drivers, etc.)

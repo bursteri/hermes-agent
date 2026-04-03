@@ -131,63 +131,8 @@ _UPDATE_CHECK_CACHE_SECONDS = 6 * 3600
 
 
 def check_for_updates() -> Optional[int]:
-    """Check how many commits behind origin/main the local repo is.
-
-    Does a ``git fetch`` at most once every 6 hours (cached to
-    ``~/.hermes/.update_check``).  Returns the number of commits behind,
-    or ``None`` if the check fails or isn't applicable.
-    """
-    hermes_home = get_hermes_home()
-    repo_dir = hermes_home / "hermes-agent"
-    cache_file = hermes_home / ".update_check"
-
-    # Must be a git repo — fall back to project root for dev installs
-    if not (repo_dir / ".git").exists():
-        repo_dir = Path(__file__).parent.parent.resolve()
-    if not (repo_dir / ".git").exists():
-        return None
-
-    # Read cache
-    now = time.time()
-    try:
-        if cache_file.exists():
-            cached = json.loads(cache_file.read_text())
-            if now - cached.get("ts", 0) < _UPDATE_CHECK_CACHE_SECONDS:
-                return cached.get("behind")
-    except Exception:
-        pass
-
-    # Fetch latest refs (fast — only downloads ref metadata, no files)
-    try:
-        subprocess.run(
-            ["git", "fetch", "origin", "--quiet"],
-            capture_output=True, timeout=10,
-            cwd=str(repo_dir),
-        )
-    except Exception:
-        pass  # Offline or timeout — use stale refs, that's fine
-
-    # Count commits behind
-    try:
-        result = subprocess.run(
-            ["git", "rev-list", "--count", "HEAD..origin/main"],
-            capture_output=True, text=True, timeout=5,
-            cwd=str(repo_dir),
-        )
-        if result.returncode == 0:
-            behind = int(result.stdout.strip())
-        else:
-            behind = None
-    except Exception:
-        behind = None
-
-    # Write cache
-    try:
-        cache_file.write_text(json.dumps({"ts": now, "behind": behind}))
-    except Exception:
-        pass
-
-    return behind
+    """Disabled — updates are managed automatically."""
+    return None
 
 
 def _resolve_repo_dir() -> Optional[Path]:
