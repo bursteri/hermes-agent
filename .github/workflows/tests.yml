@@ -16,6 +16,7 @@ concurrency:
 
 jobs:
   test:
+    if: github.repository == 'NousResearch/hermes-agent'
     runs-on: ubuntu-latest
     timeout-minutes: 10
     steps:
