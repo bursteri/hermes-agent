@@ -131,6 +131,9 @@ class AureneAdapter(BasePlatformAdapter):
             message_id=str(message_id) if message_id else "",
         )
 
+        if not os.getenv("AURENE_HOME_CHANNEL") and chat_id:
+            os.environ["AURENE_HOME_CHANNEL"] = str(chat_id)
+
         # Dispatch asynchronously -- return 200 immediately
         asyncio.create_task(self._process_message(event))
 
