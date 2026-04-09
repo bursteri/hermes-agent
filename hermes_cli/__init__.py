@@ -13,3 +13,8 @@ Provides subcommands for:
 
 __version__ = "0.11.0"
 __release_date__ = "2026.4.23"
+
+# Fork-only: install Aurene runtime overrides (disables manual self-update).
+# Imported at the end of package init so upstream additions to this file
+# stay above this line and never conflict on rebase.
+from hermes_cli import _aurene_overrides  # noqa: F401, E402
