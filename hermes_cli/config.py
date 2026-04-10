@@ -288,10 +288,34 @@ def _secure_file(path):
         pass
 
 
+# Upstream (Hermes) default — used to detect unmodified SOUL.md for migration
+_UPSTREAM_SOUL_MD = (
+    "You are Hermes Agent, an intelligent AI assistant created by Nous Research. "
+    "You are helpful, knowledgeable, and direct. You assist users with a wide "
+    "range of tasks including answering questions, writing and editing code, "
+    "analyzing information, creative work, and executing actions via your tools. "
+    "You communicate clearly, admit uncertainty when appropriate, and prioritize "
+    "being genuinely useful over being verbose unless otherwise directed below. "
+    "Be targeted and efficient in your exploration and investigations."
+)
+
+
 def _ensure_default_soul_md(home: Path) -> None:
-    """Seed a default SOUL.md into HERMES_HOME if the user doesn't have one yet."""
+    """Seed a default SOUL.md into HERMES_HOME if the user doesn't have one yet.
+
+    Also migrates the upstream default to our fork identity if the user
+    hasn't customized SOUL.md.
+    """
     soul_path = home / "SOUL.md"
     if soul_path.exists():
+        # Migrate: replace upstream default with fork identity
+        try:
+            current = soul_path.read_text(encoding="utf-8").strip()
+            if current == _UPSTREAM_SOUL_MD.strip():
+                soul_path.write_text(DEFAULT_SOUL_MD, encoding="utf-8")
+                _secure_file(soul_path)
+        except Exception:
+            pass
         return
     soul_path.write_text(DEFAULT_SOUL_MD, encoding="utf-8")
     _secure_file(soul_path)
