@@ -377,35 +377,60 @@ class HindsightMemoryProvider(MemoryProvider):
         )
 
     def prefetch(self, query: str, *, session_id: str = "") -> str:
-        if self._prefetch_thread and self._prefetch_thread.is_alive():
-            self._prefetch_thread.join(timeout=3.0)
-        with self._prefetch_lock:
-            result = self._prefetch_result
-            self._prefetch_result = ""
-        if not result:
+        """Fetch relevant memories for the current turn synchronously.
+
+        Replaces the old queue/read cache, which returned the previous
+        turn's query results (or nothing on cold start) because
+        `queue_prefetch` ran post-turn with turn N's query and
+        `prefetch` ran pre-turn on turn N+1 but ignored its query
+        argument. Costs ~1.5-2s of turn latency in exchange for
+        actually-relevant memory injection and eliminates the
+        duplicate `hindsight_recall` tool call the LLM was making to
+        compensate.
+        """
+        if self._memory_mode == "tools":
             return ""
-        return f"## Hindsight Memory\n{result}"
+        if not query:
+            return ""
+        try:
+            client = self._get_client()
+            if self._prefetch_method == "reflect":
+                resp = _run_sync(
+                    client.areflect(
+                        bank_id=self._bank_id,
+                        query=query,
+                        budget=self._budget,
+                    ),
+                    timeout=5.0,
+                )
+                text = resp.text or ""
+            else:
+                resp = _run_sync(
+                    client.arecall(
+                        bank_id=self._bank_id,
+                        query=query,
+                        budget=self._budget,
+                    ),
+                    timeout=5.0,
+                )
+                text = (
+                    "\n".join(r.text for r in resp.results if r.text)
+                    if resp.results
+                    else ""
+                )
+            if not text:
+                return ""
+            return f"## Hindsight Memory\n{text}"
+        except Exception as e:
+            logger.debug("Hindsight prefetch failed: %s", e)
+            return ""
 
     def queue_prefetch(self, query: str, *, session_id: str = "") -> None:
-        if self._memory_mode == "tools":
-            return
-        def _run():
-            try:
-                client = self._get_client()
-                if self._prefetch_method == "reflect":
-                    resp = _run_sync(client.areflect(bank_id=self._bank_id, query=query, budget=self._budget))
-                    text = resp.text or ""
-                else:
-                    resp = _run_sync(client.arecall(bank_id=self._bank_id, query=query, budget=self._budget))
-                    text = "\n".join(r.text for r in resp.results if r.text) if resp.results else ""
-                if text:
-                    with self._prefetch_lock:
-                        self._prefetch_result = text
-            except Exception as e:
-                logger.debug("Hindsight prefetch failed: %s", e)
-
-        self._prefetch_thread = threading.Thread(target=_run, daemon=True, name="hindsight-prefetch")
-        self._prefetch_thread.start()
+        """No-op. Prefetch is now synchronous in prefetch() — the old
+        queue/read split computed memories for the wrong query
+        (see prefetch docstring).
+        """
+        return
 
     def sync_turn(self, user_content: str, assistant_content: str, *, session_id: str = "") -> None:
         """Retain conversation turn in background (non-blocking)."""
