@@ -1140,67 +1140,73 @@ class HindsightMemoryProvider(MemoryProvider):
         )
 
     def prefetch(self, query: str, *, session_id: str = "") -> str:
-        if self._prefetch_thread and self._prefetch_thread.is_alive():
-            logger.debug("Prefetch: waiting for background thread to complete")
-            self._prefetch_thread.join(timeout=3.0)
-        with self._prefetch_lock:
-            result = self._prefetch_result
-            self._prefetch_result = ""
-        if not result:
-            logger.debug("Prefetch: no results available")
-            return ""
-        logger.debug("Prefetch: returning %d chars of context", len(result))
-        header = self._recall_prompt_preamble or (
-            "# Hindsight Memory (persistent cross-session context)\n"
-            "Use this to answer questions about the user and prior sessions. "
-            "Do not call tools to look up information that is already present here."
-        )
-        return f"{header}\n\n{result}"
+        """Fetch relevant memories for the current turn synchronously.
 
-    def queue_prefetch(self, query: str, *, session_id: str = "") -> None:
+        Replaces the old queue/read cache, which returned the previous
+        turn's query results (or nothing on cold start) because
+        `queue_prefetch` ran post-turn with turn N's query and
+        `prefetch` ran pre-turn on turn N+1 but ignored its query
+        argument. Costs ~1.5-2s of turn latency in exchange for
+        actually-relevant memory injection and eliminates the
+        duplicate `hindsight_recall` tool call the LLM was making to
+        compensate.
+        """
         if self._memory_mode == "tools":
-            logger.debug("Prefetch: skipped (tools-only mode)")
-            return
+            return ""
         if not self._auto_recall:
-            logger.debug("Prefetch: skipped (auto_recall disabled)")
-            return
-        if self._shutting_down.is_set():
-            logger.debug("Prefetch: skipped (shutting down)")
-            return
-        # Truncate query to max chars
+            return ""
+        if not query:
+            return ""
         if self._recall_max_input_chars and len(query) > self._recall_max_input_chars:
             query = query[:self._recall_max_input_chars]
+        try:
+            client = self._get_client()
+            if self._prefetch_method == "reflect":
+                resp = _run_sync(
+                    client.areflect(
+                        bank_id=self._bank_id,
+                        query=query,
+                        budget=self._budget,
+                    ),
+                    timeout=5.0,
+                )
+                text = resp.text or ""
+            else:
+                recall_kwargs: dict = {
+                    "bank_id": self._bank_id,
+                    "query": query,
+                    "budget": self._budget,
+                    "max_tokens": self._recall_max_tokens,
+                }
+                if self._recall_tags:
+                    recall_kwargs["tags"] = self._recall_tags
+                    recall_kwargs["tags_match"] = self._recall_tags_match
+                if self._recall_types:
+                    recall_kwargs["types"] = self._recall_types
+                resp = _run_sync(client.arecall(**recall_kwargs), timeout=5.0)
+                text = (
+                    "\n".join(f"- {r.text}" for r in resp.results if r.text)
+                    if resp.results
+                    else ""
+                )
+            if not text:
+                return ""
+            header = self._recall_prompt_preamble or (
+                "# Hindsight Memory (persistent cross-session context)\n"
+                "Use this to answer questions about the user and prior sessions. "
+                "Do not call tools to look up information that is already present here."
+            )
+            return f"{header}\n\n{text}"
+        except Exception as e:
+            logger.debug("Hindsight prefetch failed: %s", e)
+            return ""
 
-        def _run():
-            try:
-                if self._prefetch_method == "reflect":
-                    logger.debug("Prefetch: calling reflect (bank=%s, query_len=%d)", self._bank_id, len(query))
-                    resp = self._run_hindsight_operation(lambda client: client.areflect(bank_id=self._bank_id, query=query, budget=self._budget))
-                    text = resp.text or ""
-                else:
-                    recall_kwargs: dict = {
-                        "bank_id": self._bank_id, "query": query,
-                        "budget": self._budget, "max_tokens": self._recall_max_tokens,
-                    }
-                    if self._recall_tags:
-                        recall_kwargs["tags"] = self._recall_tags
-                        recall_kwargs["tags_match"] = self._recall_tags_match
-                    if self._recall_types:
-                        recall_kwargs["types"] = self._recall_types
-                    logger.debug("Prefetch: calling recall (bank=%s, query_len=%d, budget=%s)",
-                                 self._bank_id, len(query), self._budget)
-                    resp = self._run_hindsight_operation(lambda client: client.arecall(**recall_kwargs))
-                    num_results = len(resp.results) if resp.results else 0
-                    logger.debug("Prefetch: recall returned %d results", num_results)
-                    text = "\n".join(f"- {r.text}" for r in resp.results if r.text) if resp.results else ""
-                if text:
-                    with self._prefetch_lock:
-                        self._prefetch_result = text
-            except Exception as e:
-                logger.debug("Hindsight prefetch failed: %s", e, exc_info=True)
-
-        self._prefetch_thread = threading.Thread(target=_run, daemon=True, name="hindsight-prefetch")
-        self._prefetch_thread.start()
+    def queue_prefetch(self, query: str, *, session_id: str = "") -> None:
+        """No-op. Prefetch is now synchronous in prefetch() — the old
+        queue/read split computed memories for the wrong query
+        (see prefetch docstring).
+        """
+        return
 
     def _build_turn_messages(self, user_content: str, assistant_content: str) -> List[Dict[str, str]]:
         now = datetime.now(timezone.utc).isoformat()
