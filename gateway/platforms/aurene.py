@@ -48,6 +48,8 @@ class AureneAdapter(BasePlatformAdapter):
         self._api_key = os.getenv("AURENE_API_KEY", "") or config.token or ""
         self._app: Optional[web.Application] = None
         self._runner: Optional[web.AppRunner] = None
+        self._approval_state: Dict[int, str] = {}  # approval_id → session_key
+        self._approval_counter = 0
 
     async def connect(self) -> bool:
         """Start the HTTP server for inbound messages."""
@@ -61,6 +63,7 @@ class AureneAdapter(BasePlatformAdapter):
         try:
             self._app = web.Application()
             self._app.router.add_post("/message", self._handle_inbound)
+            self._app.router.add_post("/approval", self._handle_approval_callback)
             self._app.router.add_get("/health", self._handle_health)
 
             self._runner = web.AppRunner(self._app)
@@ -180,6 +183,96 @@ class AureneAdapter(BasePlatformAdapter):
         except Exception as e:
             logger.error("[%s] Webhook delivery failed: %s", self.name, e, exc_info=True)
             return SendResult(success=False, error=str(e))
+
+    async def send_exec_approval(
+        self,
+        chat_id: str,
+        command: str,
+        session_key: str,
+        description: str = "dangerous command",
+        metadata: Optional[Dict[str, Any]] = None,
+    ) -> SendResult:
+        """Send an approval request to Laravel with button choices.
+
+        Laravel renders the buttons in the mobile app.  When the user taps
+        one, Laravel POSTs back to ``/approval`` with the ``approval_id``
+        and ``choice``.
+        """
+        if not self._webhook_url:
+            return SendResult(success=False, error="No webhook URL configured")
+
+        self._approval_counter += 1
+        approval_id = self._approval_counter
+
+        self._approval_state[approval_id] = session_key
+
+        cmd_preview = command[:3800] + "..." if len(command) > 3800 else command
+
+        try:
+            import httpx
+            async with httpx.AsyncClient(timeout=30.0) as client:
+                resp = await client.post(
+                    self._webhook_url,
+                    json={
+                        "chat_id": chat_id,
+                        "type": "approval",
+                        "approval_id": approval_id,
+                        "command": cmd_preview,
+                        "description": description,
+                        "buttons": ["once", "session", "always", "deny"],
+                        "metadata": metadata or {},
+                    },
+                    headers={
+                        "Authorization": f"Bearer {self._api_key}",
+                        "Content-Type": "application/json",
+                        "Accept": "application/json",
+                    },
+                )
+                resp.raise_for_status()
+                return SendResult(success=True, message_id=str(approval_id))
+        except Exception as e:
+            # Clean up state so it doesn't leak
+            self._approval_state.pop(approval_id, None)
+            logger.error("[%s] send_exec_approval failed: %s", self.name, e, exc_info=True)
+            return SendResult(success=False, error=str(e))
+
+    async def _handle_approval_callback(self, request: web.Request) -> web.Response:
+        """Handle approval button callback from Laravel."""
+        if not self._verify_auth(request):
+            return web.json_response({"error": "unauthorized"}, status=401)
+
+        try:
+            data = await request.json()
+        except Exception:
+            return web.json_response({"error": "invalid json"}, status=400)
+
+        approval_id = data.get("approval_id")
+        choice = data.get("choice", "")
+
+        if approval_id is None or choice not in ("once", "session", "always", "deny"):
+            return web.json_response(
+                {"error": "approval_id and valid choice required"}, status=400,
+            )
+
+        try:
+            approval_id = int(approval_id)
+        except (TypeError, ValueError):
+            return web.json_response({"error": "invalid approval_id"}, status=400)
+
+        session_key = self._approval_state.pop(approval_id, None)
+        if not session_key:
+            return web.json_response(
+                {"error": "approval already resolved or unknown"}, status=404,
+            )
+
+        from tools.approval import resolve_gateway_approval
+
+        count = resolve_gateway_approval(session_key, choice)
+        logger.info(
+            "Aurene approval resolved %d approval(s) for session %s (choice=%s, id=%d)",
+            count, session_key, choice, approval_id,
+        )
+        return web.json_response({"status": "resolved", "count": count})
 
     async def send_typing(self, chat_id: str, metadata: Optional[Dict[str, Any]] = None) -> None:
         """Send typing indicator via webhook (optional, may be ignored by Laravel)."""
