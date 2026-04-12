@@ -49,12 +49,16 @@ def _migrate_soul_md() -> None:
     Seeds a new file if none exists.  Skips on subsequent runs via a
     sentinel file so we only touch the filesystem once.
     """
+    import logging as _logging
+    _logger = _logging.getLogger(__name__)
     try:
         from hermes_constants import get_hermes_home
         home = get_hermes_home()
         sentinel = home / ".aurene_migrated"
         if sentinel.exists():
             return
+        # Ensure home directory exists before writing
+        home.mkdir(parents=True, exist_ok=True)
         soul_path = home / "SOUL.md"
         if soul_path.exists():
             current = soul_path.read_text(encoding="utf-8")
@@ -63,8 +67,8 @@ def _migrate_soul_md() -> None:
         else:
             soul_path.write_text(_AURENE_SOUL, encoding="utf-8")
         sentinel.write_text("1", encoding="utf-8")
-    except Exception:
-        pass
+    except Exception as exc:
+        _logger.warning("Aurene SOUL.md migration failed: %s", exc)
 
 
 # -- Apply all overrides ------------------------------------------------------
