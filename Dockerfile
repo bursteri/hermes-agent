@@ -43,7 +43,9 @@ RUN chmod +x /opt/hermes/docker/entrypoint.sh
 
 ENV HERMES_HOME=/opt/data
 VOLUME [ "/opt/data" ]
-# aurene: hindsight memory provider
-RUN pip install --no-cache-dir hindsight-client --break-system-packages
+# aurene: hindsight memory provider (installed into upstream's /opt/hermes/.venv)
+USER hermes
+RUN uv pip install --no-cache-dir --python /opt/hermes/.venv/bin/python hindsight-client
+USER root
 
 ENTRYPOINT [ "/opt/hermes/docker/entrypoint.sh" ]
