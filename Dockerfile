@@ -264,9 +264,16 @@ COPY --chmod=0755 docker/hermes-exec-shim.sh /opt/hermes/bin/hermes
 ENV PATH="/opt/hermes/bin:/opt/hermes/.venv/bin:/opt/data/.local/bin:${PATH}"
 RUN mkdir -p /opt/data
 VOLUME [ "/opt/data" ]
+<<<<<<< HEAD
 
 # aurene: hindsight memory provider
 RUN pip install --no-cache-dir hindsight-client --break-system-packages
+=======
+# aurene: hindsight memory provider (installed into upstream's /opt/hermes/.venv)
+USER hermes
+RUN uv pip install --no-cache-dir --python /opt/hermes/.venv/bin/python hindsight-client
+USER root
+>>>>>>> 09e4dcd1b (fix(docker): install hindsight-client via uv into upstream venv)
 
 # s6-overlay's /init is PID 1. It sets up the supervision tree, runs
 # /etc/cont-init.d/* (our stage2 hook), starts s6-rc services
