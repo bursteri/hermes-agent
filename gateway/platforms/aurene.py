@@ -51,6 +51,13 @@ class AureneAdapter(BasePlatformAdapter):
         self._approval_state: Dict[int, str] = {}  # approval_id → session_key
         self._approval_counter = 0
 
+        # 1 handler/pod = 1 Steel session/pod, because Aurene is the only
+        # Steel-opening path here. More browsers = more pods. If another
+        # Steel path appears (cron, MCP, other adapter), move this to
+        # tools/browser_tool.py (sync — use threading.Lock) and remove
+        # this lock; the tool-layer one supersedes it.
+        self._browse_lock = asyncio.Lock()
+
     async def connect(self) -> bool:
         """Start the HTTP server for inbound messages."""
         if not self._webhook_url:
@@ -144,10 +151,11 @@ class AureneAdapter(BasePlatformAdapter):
 
     async def _process_message(self, event: MessageEvent) -> None:
         """Process message through the gateway pipeline."""
-        try:
-            await self.handle_message(event)
-        except Exception as e:
-            logger.error("[%s] Error processing message: %s", self.name, e, exc_info=True)
+        async with self._browse_lock:
+            try:
+                await self.handle_message(event)
+            except Exception as e:
+                logger.error("[%s] Error processing message: %s", self.name, e, exc_info=True)
 
     async def send(
         self,
