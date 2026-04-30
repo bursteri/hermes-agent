@@ -1537,6 +1537,11 @@ class HindsightMemoryProvider(MemoryProvider):
                 self._run_hindsight_operation(lambda client: client.aretain(**retain_kwargs))
                 logger.debug("Tool hindsight_retain: success")
                 return json.dumps({"result": "Memory stored successfully."})
+            except TimeoutError:
+                logger.warning("hindsight_retain timed out", exc_info=True)
+                return tool_error(
+                    "Hindsight retain timed out. The server may be slow — try again shortly."
+                )
             except Exception as e:
                 logger.warning("hindsight_retain failed: %s", e, exc_info=True)
                 return tool_error(f"Failed to store memory: {e}")
@@ -1564,6 +1569,11 @@ class HindsightMemoryProvider(MemoryProvider):
                     return json.dumps({"result": "No relevant memories found."})
                 lines = [f"{i}. {r.text}" for i, r in enumerate(resp.results, 1)]
                 return json.dumps({"result": "\n".join(lines)})
+            except TimeoutError:
+                logger.warning("hindsight_recall timed out", exc_info=True)
+                return tool_error(
+                    "Hindsight recall timed out. The query may be too broad — try a more focused one."
+                )
             except Exception as e:
                 logger.warning("hindsight_recall failed: %s", e, exc_info=True)
                 return tool_error(f"Failed to search memory: {e}")
@@ -1582,6 +1592,11 @@ class HindsightMemoryProvider(MemoryProvider):
                 )
                 logger.debug("Tool hindsight_reflect: response_len=%d", len(resp.text or ""))
                 return json.dumps({"result": resp.text or "No relevant memories found."})
+            except TimeoutError:
+                logger.warning("hindsight_reflect timed out", exc_info=True)
+                return tool_error(
+                    "Hindsight reflect timed out. The query may be too broad — try a more focused one."
+                )
             except Exception as e:
                 logger.warning("hindsight_reflect failed: %s", e, exc_info=True)
                 return tool_error(f"Failed to reflect: {e}")
