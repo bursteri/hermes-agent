@@ -124,7 +124,9 @@ all = [
   "hermes-agent[dingtalk]",
   "hermes-agent[feishu]",
   "hermes-agent[google]",
-  "hermes-agent[mistral]",
+  # aurene: mistralai is quarantined on PyPI (no installable versions); drop
+  # from "all" so Docker builds resolve. Users who want Mistral can install
+  # the [mistral] extra explicitly once upstream is restored.
   "hermes-agent[bedrock]",
   "hermes-agent[web]",
 ]
