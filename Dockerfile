@@ -86,9 +86,8 @@ ENV HERMES_WEB_DIST=/opt/hermes/hermes_cli/web_dist
 ENV HERMES_HOME=/opt/data
 ENV PATH="/opt/data/.local/bin:${PATH}"
 VOLUME [ "/opt/data" ]
-# aurene: hindsight memory provider (installed into upstream's /opt/hermes/.venv)
-USER hermes
+# aurene: hindsight memory provider (installed into upstream's /opt/hermes/.venv,
+# which is root-owned after the upstream `uv venv` step, so install as root).
 RUN uv pip install --no-cache-dir --python /opt/hermes/.venv/bin/python hindsight-client
-USER root
 
 ENTRYPOINT [ "/usr/bin/tini", "-g", "--", "/opt/hermes/docker/entrypoint.sh" ]
