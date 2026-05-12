@@ -264,16 +264,12 @@ COPY --chmod=0755 docker/hermes-exec-shim.sh /opt/hermes/bin/hermes
 ENV PATH="/opt/hermes/bin:/opt/hermes/.venv/bin:/opt/data/.local/bin:${PATH}"
 RUN mkdir -p /opt/data
 VOLUME [ "/opt/data" ]
-<<<<<<< HEAD
 
-# aurene: hindsight memory provider
-RUN pip install --no-cache-dir hindsight-client --break-system-packages
-=======
-# aurene: hindsight memory provider (installed into upstream's /opt/hermes/.venv)
-USER hermes
+# aurene: hindsight memory provider, installed into upstream's
+# /opt/hermes/.venv. No USER switch here (s6-overlay drops to the hermes
+# user at runtime), so this runs as root; hindsight-client is import-only
+# at runtime, so root-owned package files inside the venv are fine.
 RUN uv pip install --no-cache-dir --python /opt/hermes/.venv/bin/python hindsight-client
-USER root
->>>>>>> 09e4dcd1b (fix(docker): install hindsight-client via uv into upstream venv)
 
 # s6-overlay's /init is PID 1. It sets up the supervision tree, runs
 # /etc/cont-init.d/* (our stage2 hook), starts s6-rc services
