@@ -24,26 +24,19 @@ from gateway.platforms.base import (
     SendResult,
 )
 
-def _aurene_enabled() -> bool:
-    return os.getenv("AURENE_ENABLED", "").strip().lower() in {"1", "true", "yes", "on"}
-
-
 def check_requirements() -> bool:
-    """Aurene is configured when AURENE_ENABLED is set and credentials present.
+    """Aurene is configured when its credentials are present.
 
     No external pip packages needed — aiohttp + httpx are already gateway
-    dependencies. Gated on AURENE_ENABLED so the platform stays dormant for
-    non-Aurene users even when stray AURENE_* env vars happen to be present.
+    dependencies. This fork *is* Aurene, so there is no separate
+    AURENE_ENABLED opt-in flag: the platform enables automatically whenever
+    AURENE_API_KEY and AURENE_WEBHOOK_URL are set.
     """
-    if not _aurene_enabled():
-        return False
     return bool(os.getenv("AURENE_API_KEY") and os.getenv("AURENE_WEBHOOK_URL"))
 
 
 def validate_config(config: PlatformConfig) -> bool:
     """Validate the platform config has enough info to connect."""
-    if not _aurene_enabled():
-        return False
     extra = getattr(config, "extra", {}) or {}
     api_key = os.getenv("AURENE_API_KEY") or (config.token or "")
     webhook_url = os.getenv("AURENE_WEBHOOK_URL") or extra.get("webhook_url", "")
@@ -350,8 +343,6 @@ def _env_enablement() -> Optional[dict]:
     skips auto-enabling. Replaces the hand-rolled AURENE_* block that used
     to live in ``gateway/config.py::_apply_env_overrides``.
     """
-    if not _aurene_enabled():
-        return None
     api_key = os.getenv("AURENE_API_KEY", "").strip()
     webhook_url = os.getenv("AURENE_WEBHOOK_URL", "").strip()
     if not (api_key and webhook_url):
@@ -422,12 +413,8 @@ def _interactive_setup() -> None:
     )
 
     print_info("Configure your backend webhook URL and shared API key.")
+    print_info("Aurene enables automatically once both are set.")
     print()
-
-    if not prompt_yes_no("Enable Aurene adapter?", True):
-        save_env_value("AURENE_ENABLED", "false")
-        return
-    save_env_value("AURENE_ENABLED", "true")
 
     api_key = prompt(
         "Shared API key for bidirectional auth",
@@ -480,7 +467,7 @@ def register(ctx) -> None:
         validate_config=validate_config,
         is_connected=is_connected,
         required_env=["AURENE_API_KEY", "AURENE_WEBHOOK_URL"],
-        install_hint="Set AURENE_ENABLED=true and configure AURENE_API_KEY + AURENE_WEBHOOK_URL",
+        install_hint="Configure AURENE_API_KEY + AURENE_WEBHOOK_URL (Aurene enables automatically once both are set)",
         setup_fn=_interactive_setup,
         env_enablement_fn=_env_enablement,
         # Cron delivery: deliver=aurene routes to AURENE_HOME_CHANNEL.

@@ -21,10 +21,6 @@ requires_env:
     prompt: "Backend webhook URL"
     password: false
 optional_env:
-  - name: AURENE_ENABLED
-    description: "Set to 'true' to enable the Aurene adapter"
-    prompt: "Enable Aurene adapter? (true/false)"
-    password: false
   - name: AURENE_PORT
     description: "Port for the inbound HTTP server (default: 8650)"
     prompt: "Inbound HTTP port"
