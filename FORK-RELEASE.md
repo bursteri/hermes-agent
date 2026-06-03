@@ -34,19 +34,26 @@ git rebase --onto "$LATEST" "$OLD_BASE"
 # Conflicts: resolve, `git add <file>`, `git rebase --continue`.
 # Bail entirely:  `git rebase --abort`  (branch unchanged).
 
-# 5. Compute the fork tag name from the post-rebase pyproject version
+# 5. Compute the fork tag from the LITERAL post-rebase pyproject version.
+#    Use the full version string verbatim — v0.15.2, NOT v0.152. (The old
+#    "v0.${MINOR}${PATCH}" formula produced ugly names like v0.152; dropped.)
 VERSION=$(grep -E '^version = ' pyproject.toml | head -1 | sed -E 's/.*"([0-9.]+)".*/\1/')
-MINOR=$(echo "$VERSION" | cut -d. -f2)
-PATCH=$(echo "$VERSION" | cut -d. -f3)
-TAG_BASE="v0.${MINOR}${PATCH}"
-MAX_N=$(git tag --list "${TAG_BASE}-aurene.*" | sed -E "s/.*-aurene\.//" | sort -n | tail -1)
-FORK_TAG="${TAG_BASE}-aurene.$((${MAX_N:-0} + 1))"
+MAX_N=$(git tag --list "v${VERSION}-aurene.*" | sed -E "s/.*-aurene\.//" | sort -n | tail -1)
+FORK_TAG="v${VERSION}-aurene.$((${MAX_N:-0} + 1))"
 echo "Will tag: $FORK_TAG  (pyproject $VERSION)"
 
 # 6. Push the rebased branch, then the tag
 git push --force-with-lease origin aurene-adapter
 git tag "$FORK_TAG"
 git push origin "$FORK_TAG"
+
+# 7. MANDATORY cleanup — the moment the tag is pushed, the rebase is durable
+#    (the tag + reflog are the real safety net) and the backup is dead weight.
+#    INVARIANT: the fork carries ONLY `aurene-adapter` and `main`. Delete every
+#    backup/temp branch here, every time, so they never accumulate again.
+git branch -D $(git branch --list 'aurene-adapter.backup-*') 2>/dev/null || true
+git worktree prune
+git branch     # confirm: only aurene-adapter + main remain
 ```
 
 The tag push triggers `.github/workflows/build.yml`, which builds the image
@@ -77,10 +84,17 @@ If a rebase conflicts, it'll be in one of these — everything else is upstream.
 - Agent identity / branding rebrands + `hermes_cli/_aurene_overrides.py`
 - Hindsight integration, `_codex_token_inject.py`, Dockerfile, SOUL.md
 
-## Cleanup
+## Branch hygiene (invariant)
 
-Once the new image is verified, drop the backup branches:
+**The fork carries exactly two branches: `aurene-adapter` and `main`.** Nothing
+else — no `aurene-adapter.backup-*`, no `*-migration`, no `claude/*` worktree
+branches. Step 7 above deletes the backup as part of every release, so it is
+never left behind. If stray branches ever reappear (interrupted rebase,
+abandoned worktree, agent leftovers), clear them:
 
 ```bash
-git branch -D $(git branch --list 'aurene-adapter.backup-*')
+git branch -D $(git branch --list 'aurene-adapter.backup-*' 'aurene-plugin-*') 2>/dev/null
+git worktree prune
+git for-each-ref --format='%(refname:short)' refs/heads/claude/ | xargs -r git branch -D
+git branch   # must show only: aurene-adapter, main
 ```
