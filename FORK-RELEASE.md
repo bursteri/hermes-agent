@@ -63,12 +63,19 @@ and pushes it to `ghcr.io/bursteri/hermes-agent:$FORK_TAG` (and `:latest`).
 
 ## Files the aurene patches touch
 
+The Aurene platform now lives entirely in `plugins/platforms/aurene/` (a
+bundled platform plugin: `adapter.py` + `__init__.py` + `plugin.yaml`). Its
+`register(ctx)` wires everything through upstream's `platform_registry`
+(adapter creation, auth env vars, cron delivery, platform hint, setup wizard,
+status, toolset), so the platform carries **zero** in-place edits to upstream
+core files and will never conflict on rebase.
+
 If a rebase conflicts, it'll be in one of these — everything else is upstream.
 
-- `gateway/platforms/aurene.py` *(new file, will never conflict)*
-- `gateway/` tool/platform registration (Aurene wiring)
+- `plugins/platforms/aurene/` *(new files, will never conflict)*
 - `.github/workflows/build.yml`, `nix.yml`, `tests.yml`
-- Agent identity + update-notifier wiring
+- Agent identity / branding rebrands + `hermes_cli/_aurene_overrides.py`
+- Hindsight integration, `_codex_token_inject.py`, Dockerfile, SOUL.md
 
 ## Cleanup
 

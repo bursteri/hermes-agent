@@ -1,0 +1,43 @@
+name: aurene-platform
+label: Aurene
+kind: platform
+version: 1.0.0
+description: >
+  Aurene mobile-app backend adapter. Receives messages via HTTP POST from a
+  backend server (Laravel) and delivers responses via webhook callback to the
+  same server. Designed for mobile apps where push notifications handle
+  delivery to the user's device. No external dependencies — uses aiohttp
+  (inbound) and httpx (outbound), both already gateway requirements.
+author: Aurene
+# ``requires_env`` entries are surfaced in ``hermes config`` UI via the
+# platform-plugin env var injector in ``hermes_cli/config.py``.
+requires_env:
+  - name: AURENE_API_KEY
+    description: "Shared secret used for bidirectional authentication"
+    prompt: "Shared API key"
+    password: true
+  - name: AURENE_WEBHOOK_URL
+    description: "URL where outbound messages are delivered via POST"
+    prompt: "Backend webhook URL"
+    password: false
+optional_env:
+  - name: AURENE_ENABLED
+    description: "Set to 'true' to enable the Aurene adapter"
+    prompt: "Enable Aurene adapter? (true/false)"
+    password: false
+  - name: AURENE_PORT
+    description: "Port for the inbound HTTP server (default: 8650)"
+    prompt: "Inbound HTTP port"
+    password: false
+  - name: AURENE_HOME_CHANNEL
+    description: "Chat ID for cron / notification delivery (auto-set from first inbound chat)"
+    prompt: "Home channel ID (or empty)"
+    password: false
+  - name: AURENE_ALLOWED_USERS
+    description: "Comma-separated user IDs allowed to talk to the bot"
+    prompt: "Allowed user IDs (comma-separated)"
+    password: false
+  - name: AURENE_ALLOW_ALL_USERS
+    description: "Allow any user to talk to the bot (dev only)"
+    prompt: "Allow all users? (true/false)"
+    password: false

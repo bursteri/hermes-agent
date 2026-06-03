@@ -24,11 +24,34 @@ from gateway.platforms.base import (
     SendResult,
 )
 
-AURENE_AVAILABLE = True
+def _aurene_enabled() -> bool:
+    return os.getenv("AURENE_ENABLED", "").strip().lower() in {"1", "true", "yes", "on"}
 
 
-def check_aurene_requirements() -> bool:
-    return AURENE_AVAILABLE
+def check_requirements() -> bool:
+    """Aurene is configured when AURENE_ENABLED is set and credentials present.
+
+    No external pip packages needed — aiohttp + httpx are already gateway
+    dependencies. Gated on AURENE_ENABLED so the platform stays dormant for
+    non-Aurene users even when stray AURENE_* env vars happen to be present.
+    """
+    if not _aurene_enabled():
+        return False
+    return bool(os.getenv("AURENE_API_KEY") and os.getenv("AURENE_WEBHOOK_URL"))
+
+
+def validate_config(config: PlatformConfig) -> bool:
+    """Validate the platform config has enough info to connect."""
+    if not _aurene_enabled():
+        return False
+    extra = getattr(config, "extra", {}) or {}
+    api_key = os.getenv("AURENE_API_KEY") or (config.token or "")
+    webhook_url = os.getenv("AURENE_WEBHOOK_URL") or extra.get("webhook_url", "")
+    return bool(api_key and webhook_url)
+
+
+def is_connected(config: PlatformConfig) -> bool:
+    return validate_config(config)
 
 
 class AureneAdapter(BasePlatformAdapter):
@@ -41,10 +64,13 @@ class AureneAdapter(BasePlatformAdapter):
 
     MAX_MESSAGE_LENGTH = 4096
 
-    def __init__(self, config: PlatformConfig):
-        super().__init__(config, Platform.AURENE)
-        self._port = int(os.getenv("AURENE_PORT", "8650"))
-        self._webhook_url = os.getenv("AURENE_WEBHOOK_URL", "")
+    def __init__(self, config: PlatformConfig, **_kwargs: Any):
+        # Platform("aurene") resolves via Platform._missing_ once the plugin
+        # is registered — there is no static Platform.AURENE enum member.
+        super().__init__(config, Platform("aurene"))
+        extra = getattr(config, "extra", {}) or {}
+        self._port = int(os.getenv("AURENE_PORT") or extra.get("port", 8650))
+        self._webhook_url = os.getenv("AURENE_WEBHOOK_URL") or extra.get("webhook_url", "")
         self._api_key = os.getenv("AURENE_API_KEY", "") or config.token or ""
         self._app: Optional[web.Application] = None
         self._runner: Optional[web.AppRunner] = None
@@ -308,3 +334,173 @@ class AureneAdapter(BasePlatformAdapter):
     def format_message(self, content: str) -> str:
         """Pass through markdown as-is. The mobile app handles rendering."""
         return content
+
+
+# ---------------------------------------------------------------------------
+# Plugin registration
+# ---------------------------------------------------------------------------
+
+def _env_enablement() -> Optional[dict]:
+    """Seed PlatformConfig.extra from env vars during gateway config load.
+
+    Called by the platform registry's env-enablement hook BEFORE adapter
+    construction, so ``gateway status`` and ``get_connected_platforms()``
+    reflect env-only configuration without instantiating the adapter.
+    Returns None when Aurene isn't minimally configured; the caller then
+    skips auto-enabling. Replaces the hand-rolled AURENE_* block that used
+    to live in ``gateway/config.py::_apply_env_overrides``.
+    """
+    if not _aurene_enabled():
+        return None
+    api_key = os.getenv("AURENE_API_KEY", "").strip()
+    webhook_url = os.getenv("AURENE_WEBHOOK_URL", "").strip()
+    if not (api_key and webhook_url):
+        return None
+    seed: dict = {"webhook_url": webhook_url}
+    port = os.getenv("AURENE_PORT", "").strip()
+    if port:
+        try:
+            seed["port"] = int(port)
+        except ValueError:
+            pass
+    home = os.getenv("AURENE_HOME_CHANNEL", "").strip()
+    if home:
+        seed["home_channel"] = {
+            "chat_id": home,
+            "name": os.getenv("AURENE_HOME_CHANNEL_NAME", home),
+        }
+    return seed
+
+
+async def _standalone_send(
+    pconfig,
+    chat_id,
+    message,
+    *,
+    thread_id=None,
+    media_files=None,
+    force_document=False,
+) -> dict:
+    """Out-of-process sender for cron / separate-process delivery.
+
+    Used by ``tools/send_message_tool.py`` when no live gateway adapter is
+    available (e.g. a cron job running in its own process). Mirrors the
+    adapter's webhook ``send`` path. Replaces the old ``_send_aurene`` helper.
+    """
+    import httpx
+
+    webhook_url = os.getenv("AURENE_WEBHOOK_URL", "")
+    api_key = os.getenv("AURENE_API_KEY", "")
+    if not webhook_url or not api_key:
+        return {"error": "Aurene not configured (AURENE_WEBHOOK_URL / AURENE_API_KEY)"}
+    try:
+        async with httpx.AsyncClient(timeout=30.0) as client:
+            resp = await client.post(
+                webhook_url,
+                json={"chat_id": chat_id, "type": "message", "content": message},
+                headers={
+                    "Authorization": f"Bearer {api_key}",
+                    "Content-Type": "application/json",
+                    "Accept": "application/json",
+                },
+            )
+            resp.raise_for_status()
+        return {"success": True, "platform": "aurene", "chat_id": chat_id}
+    except Exception as e:
+        return {"error": f"Aurene send failed: {e}"}
+
+
+def _interactive_setup() -> None:
+    """Walk the user through configuring Aurene env vars (hermes setup)."""
+    from hermes_cli.config import get_env_value, save_env_value
+    from hermes_cli.cli_output import (
+        prompt,
+        prompt_yes_no,
+        print_info,
+        print_success,
+        print_warning,
+    )
+
+    print_info("Configure your backend webhook URL and shared API key.")
+    print()
+
+    if not prompt_yes_no("Enable Aurene adapter?", True):
+        save_env_value("AURENE_ENABLED", "false")
+        return
+    save_env_value("AURENE_ENABLED", "true")
+
+    api_key = prompt(
+        "Shared API key for bidirectional auth",
+        default=get_env_value("AURENE_API_KEY") or "",
+        password=True,
+    )
+    if not api_key:
+        print_warning("API key is required — skipping Aurene setup")
+        return
+    save_env_value("AURENE_API_KEY", api_key.strip())
+
+    webhook_url = prompt(
+        "Laravel webhook URL (outbound delivery POST target)",
+        default=get_env_value("AURENE_WEBHOOK_URL") or "",
+    )
+    if not webhook_url:
+        print_warning("Webhook URL is required — skipping Aurene setup")
+        return
+    save_env_value("AURENE_WEBHOOK_URL", webhook_url.strip())
+
+    port = prompt(
+        "Inbound HTTP port",
+        default=get_env_value("AURENE_PORT") or "8650",
+    )
+    if port:
+        save_env_value("AURENE_PORT", port.strip())
+
+    if prompt_yes_no("Restrict access to specific users? (recommended)", True):
+        allowed = prompt(
+            "Allowed user IDs (comma-separated)",
+            default=get_env_value("AURENE_ALLOWED_USERS") or "",
+        )
+        if allowed:
+            save_env_value("AURENE_ALLOWED_USERS", allowed.replace(" ", ""))
+    else:
+        save_env_value("AURENE_ALLOW_ALL_USERS", "true")
+        print_warning("⚠️  Open access — anyone who can reach the inbound port can command the bot.")
+
+    print()
+    print_success("Aurene configuration saved to ~/.hermes/.env")
+
+
+def register(ctx) -> None:
+    """Plugin entry point — called by the Hermes plugin system."""
+    ctx.register_platform(
+        name="aurene",
+        label="Aurene",
+        adapter_factory=lambda cfg: AureneAdapter(cfg),
+        check_fn=check_requirements,
+        validate_config=validate_config,
+        is_connected=is_connected,
+        required_env=["AURENE_API_KEY", "AURENE_WEBHOOK_URL"],
+        install_hint="Set AURENE_ENABLED=true and configure AURENE_API_KEY + AURENE_WEBHOOK_URL",
+        setup_fn=_interactive_setup,
+        env_enablement_fn=_env_enablement,
+        # Cron delivery: deliver=aurene routes to AURENE_HOME_CHANNEL.
+        cron_deliver_env_var="AURENE_HOME_CHANNEL",
+        # Out-of-process (cron) delivery when no live adapter is present.
+        standalone_sender_fn=_standalone_send,
+        allowed_users_env="AURENE_ALLOWED_USERS",
+        allow_all_env="AURENE_ALLOW_ALL_USERS",
+        max_message_length=AureneAdapter.MAX_MESSAGE_LENGTH,
+        emoji="🔮",
+        pii_safe=False,
+        # Aurene users update via the mobile app pipeline, not /update.
+        allow_update_command=False,
+        platform_hint=(
+            "You are on a text messaging communication platform, Aurene. "
+            "Please do not use markdown as it does not render. "
+            "You can send media files natively: to deliver a file to the user, "
+            "include MEDIA:/absolute/path/to/file in your response. Images "
+            "(.png, .jpg, .webp) appear as photos, audio (.ogg) sends as voice "
+            "bubbles, and videos (.mp4) play inline. You can also include image "
+            "URLs in markdown format ![alt](url) and they will be sent as native photos."
+        ),
+    )

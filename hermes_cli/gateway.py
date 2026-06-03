@@ -3683,25 +3683,6 @@ _PLATFORMS = [
              "help": "The App Secret (used for HMAC signing) from your Yuanbao IM Bot."},
         ],
     },
-    {
-        "key": "aurene",
-        "label": "Aurene (App Backend)",
-        "emoji": "📱",
-        "token_var": "AURENE_API_KEY",
-        "setup_instructions": [
-            "Configure your backend webhook URL and shared API key.",
-        ],
-        "vars": [
-            {"name": "AURENE_ENABLED", "prompt": "Enable Aurene adapter", "password": False,
-             "help": "Set to 'true' to enable the Aurene adapter."},
-            {"name": "AURENE_API_KEY", "prompt": "Shared API key for auth", "password": True,
-             "help": "Shared secret used for bidirectional authentication."},
-            {"name": "AURENE_WEBHOOK_URL", "prompt": "Your Laravel webhook URL", "password": False,
-             "help": "The URL where outbound messages are delivered via POST."},
-            {"name": "AURENE_PORT", "prompt": "Inbound HTTP port", "password": False,
-             "help": "Port for the inbound HTTP server (default: 8650)."},
-        ],
-    },
 ]
 def _all_platforms() -> list[dict]:
     """Return the full list of platforms for setup menus.
